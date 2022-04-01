@@ -1,0 +1,408 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(mosaic)
+library(tidyverse)
+```
+
+```{r}
+rm(list = ls())
+playerLog <- read.csv(file = "logs.csv")
+drugScore <- read.csv(file = "S5_scores_cleaned.csv")
+```
+
+```{r}
+head(playerLog)
+```
+
+
+## Data preparation
+```{r}
+#seperate players into week groups
+drugScore1 <-
+  drugScore %>%
+  group_by(player_id) %>%
+  filter(n() == 1)
+
+drugScore2 <-
+  drugScore %>%
+  group_by(player_id) %>%
+  filter(n() == 2)
+
+drugScore3 <-
+  drugScore %>%
+  group_by(player_id) %>%
+  filter(n() == 3)
+
+drugScore4 <-
+  drugScore %>%
+  group_by(player_id) %>%
+  filter(n() == 4)
+
+drugScore5 <-
+  drugScore %>%
+  group_by(player_id) %>%
+  filter(n() == 5)
+```
+
+
+
+```{r}
+#Filter out players that had lower drugscore at the end
+drugScore2Imp <-
+  drugScore2 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 2] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff < 0)
+
+drugScore3Imp <-
+  drugScore3 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 3] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff < 0)
+
+drugScore4Imp <-
+  drugScore4 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 4] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff < 0)
+
+drugScore5Imp <- 
+  drugScore5 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 5] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff < 0)
+
+drugScoreImpCombined <-
+  rbind(drugScore2Imp, drugScore3Imp, drugScore4Imp, drugScore5Imp)
+```
+
+
+
+```{r}
+#Filter out players that had higher or equal drugscore at the end
+drugScore2NotImp <-
+  drugScore2 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 2] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff >= 0)
+
+drugScore3NotImp <-
+  drugScore3 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 3] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff >= 0)
+
+drugScore4NotImp <-
+  drugScore4 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 4] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff >= 0)
+
+drugScore5NotImp <-
+  drugScore5 %>%
+  group_by(player_id) %>%
+  mutate(weekOrder = row_number()) %>%
+  mutate(endStartDiff = S5_mean[weekOrder == 5] - S5_mean[weekOrder == 1]) %>%
+  mutate(avgDrugScore = mean(S5_mean)) %>%
+  filter(endStartDiff >= 0)
+
+drugScoreNotImpCombined <-
+  rbind(drugScore2NotImp, drugScore3NotImp, drugScore4NotImp, drugScore5NotImp)
+```
+
+
+```{r}
+#Add column of improved boolean to players who improved
+playersImp <-
+  drugScoreImpCombined %>%
+  distinct(player_id, endStartDiff, avgDrugScore) %>%
+  mutate(Improved = TRUE)
+
+playersImp
+```
+
+
+```{r}
+#Add non-improved boolean data to players who did not improve
+playersNotImp <-
+  drugScoreNotImpCombined %>%
+  distinct(player_id, endStartDiff, avgDrugScore) %>%
+  mutate(Improved = FALSE)
+
+playersNotImp
+```
+
+
+```{r}
+#Create a column for the time spent on each activity 
+data <- playerLog %>%
+  group_by(player_id) %>%
+  mutate(deltaTime = event_time_dbl - lag(event_time_dbl))
+
+# Take the average of the time per event in each session
+average_time_per_session <-
+  data %>% group_by(player_id,session) %>%
+  mutate(AverageTime = mean(deltaTime, na.rm = TRUE)) %>% 
+  select(c('player_id','session','AverageTime')) %>% 
+  distinct()
+
+
+#Remove Zeros
+average_time_per_session_no_zeros <-
+  data %>% group_by(player_id,session) %>%
+  mutate(AverageTime = mean(deltaTime, na.rm = TRUE)) %>%
+  filter(deltaTime != 0) %>%
+  select(c('player_id','session','AverageTime')) %>% 
+  distinct()
+
+playerLog %>%
+  select(player_id, session, event_time, event_time_dbl)
+
+average_time_per_session_no_zeros
+```
+
+
+## Data exploration with graphs
+```{r}
+combined <- 
+  rbind(playersImp, playersNotImp)
+
+logCombined <-
+  average_time_per_session_no_zeros %>%
+  inner_join(combined)
+
+ggplot(data = logCombined, aes(x = session, y = AverageTime, group=player_id)) + 
+  ylim(0, 10) +
+  geom_line()  + 
+  aes(colour = Improved) + 
+  theme(legend.position = "right") + 
+  labs(title = "")
+```
+
+
+```{r}
+#checking if there is NA variable
+any(is.na(logCombined))
+
+logCombinedImproved <-
+  logCombined %>%
+  filter(Improved == TRUE )
+
+logCombinedNotImproved <-
+  logCombined %>%
+  filter(Improved == FALSE )
+
+ggplot(data = logCombinedImproved, aes(x = session, y = AverageTime, group=player_id)) + 
+  ylim(0, 10) +
+  geom_line()  + 
+  theme(legend.position = "right") + 
+  labs(title = "Sessions versus Average time spent on improved players")
+
+ggplot(data = logCombinedNotImproved, aes(x = session, y = AverageTime, group=player_id)) + 
+  ylim(0, 10) +
+  geom_line()  + 
+  theme(legend.position = "right") + 
+  labs(title = "Sessions versus Average time spent on non-improved players")
+```
+
+We noticed there's variability in session name which is causing session to not be in chronological order and need to do further data cleaning.  
+Also for visibility, session needs to be in shorter format.
+
+
+## Data Cleaning
+```{r}
+logCombined %>%
+  ungroup() %>%
+  distinct(session) %>%
+  arrange()
+#37 different session names
+
+sessionCleanedThird <-
+  logCombined %>%
+  mutate(session = replace(session, session == "Session1", "Session 1")) %>%
+  mutate(session = replace(session, session == "Seesion 10", "Session 10")) %>%
+  mutate(session = replace(session, session == "Sesion 10", "Session 10")) %>%
+  mutate(session = replace(session, session == "session 5", "Session 5")) %>%
+  mutate(session = replace(session, session == "session 4", "Session 4"))
+
+sessionCleanedFirst <-
+  sessionCleanedThird %>%
+  mutate(session = replace(session, session == "Session 7 _ 8", "Session 7")) %>%
+  mutate(session = replace(session, session == "Session 9 _ 10", "Session 9")) %>%
+  mutate(session = replace(session, session == "Session 8 _ 9", "Session 8")) %>%
+  mutate(session = replace(session, session == "Session 10 _ 11", "Session 10")) %>%
+  mutate(session = replace(session, session == "Sessions 2 _ 3", "Session 2")) %>%
+  mutate(session = replace(session, session == "Session 4 _ 5", "Session 4")) %>%
+  mutate(session = replace(session, session == "Session 6 _ 7", "Session 6")) %>%
+  mutate(session = replace(session, session == "Session 2 _ 3", "Session 2")) %>%
+  mutate(session = replace(session, session == "Sessions 10 _ 11", "Session 10")) %>%
+  mutate(session = replace(session, session == "Sessions 1_ 2", "Session 1")) %>%
+  mutate(session = replace(session, session == "Sessions 3 _ 4", "Session 3")) %>%
+  mutate(session = replace(session, session == "Sessions 5 _ 6", "Session 5")) %>%
+  mutate(session = replace(session, session == "Sessions 7 _ 8", "Session 7")) %>%
+  mutate(session = replace(session, session == "Sessions 1 _ 2", "Session 1")) %>%
+  mutate(session = replace(session, session == "Session 3 _ 4", "Session 3")) %>%
+  mutate(session = replace(session, session == "Session 1 _ 2", "Session 1")) 
+
+dirtySessionFiltered <-
+  logCombined %>%
+  filter(session == "Session 7 _ 8" || 
+           session == "Session 9 _ 10" || 
+           session == "Session 8 _ 9" || 
+           session == "Session 10 _ 11" || 
+           session == "Sessions 2 _ 3" || 
+           session == "Session 4 _ 5" || 
+           session == "Session 6 _ 7" || 
+           session == "Session 2 _ 3" || 
+           session == "Sessions 10 _ 11" || 
+           session == "Sessions 1_ 2" || 
+           session == "Sessions 3 _ 4" || 
+           session == "Sessions 5 _ 6" || 
+           session == "Sessions 7 _ 8" || 
+           session == "Sessions 1 _ 2" || 
+           session == "Session 3 _ 4" || 
+           session == "Session 1 _ 2"
+         ) 
+
+sessionCleanedSecond <-
+  dirtySessionFiltered %>%
+  mutate(session = replace(session, session == "Session 7 _ 8", "Session 8")) %>%
+  mutate(session = replace(session, session == "Session 9 _ 10", "Session 10")) %>%
+  mutate(session = replace(session, session == "Session 8 _ 9", "Session 9")) %>%
+  mutate(session = replace(session, session == "Session 10 _ 11", "Session 11")) %>%
+  mutate(session = replace(session, session == "Sessions 2 _ 3", "Session 3")) %>%
+  mutate(session = replace(session, session == "Session 4 _ 5", "Session 5")) %>%
+  mutate(session = replace(session, session == "Session 6 _ 7", "Session 7")) %>%
+  mutate(session = replace(session, session == "Session 2 _ 3", "Session 3")) %>%
+  mutate(session = replace(session, session == "Sessions 10 _ 11", "Session 11")) %>%
+  mutate(session = replace(session, session == "Sessions 1_ 2", "Session 2")) %>%
+  mutate(session = replace(session, session == "Sessions 3 _ 4", "Session 4")) %>%
+  mutate(session = replace(session, session == "Sessions 5 _ 6", "Session 6")) %>%
+  mutate(session = replace(session, session == "Sessions 7 _ 8", "Session 8")) %>%
+  mutate(session = replace(session, session == "Sessions 1 _ 2", "Session 2")) %>%
+  mutate(session = replace(session, session == "Session 3 _ 4", "Session 4")) %>%
+  mutate(session = replace(session, session == "Session 1 _ 2", "Session 2")) 
+
+logCombinedCleaned <-
+  rbind(sessionCleanedFirst, sessionCleanedSecond)
+
+logCombinedCleaned <-
+  logCombinedCleaned %>%
+  mutate(session = replace(session, session == "Session 1", 1)) %>%
+  mutate(session = replace(session, session == "Session 2", 2)) %>%
+  mutate(session = replace(session, session == "Session 3", 3)) %>%
+  mutate(session = replace(session, session == "Session 4", 4)) %>%
+  mutate(session = replace(session, session == "Session 5", 5)) %>%
+  mutate(session = replace(session, session == "Session 6", 6)) %>%
+  mutate(session = replace(session, session == "Session 7", 7)) %>%
+  mutate(session = replace(session, session == "Session 8", 8)) %>%
+  mutate(session = replace(session, session == "Session 9", 9)) %>%
+  mutate(session = replace(session, session == "Session 10", 10)) %>%
+  mutate(session = replace(session, session == "Session 11", 11)) %>%
+  mutate(session = replace(session, session == "Session 12", 12)) %>%
+  mutate(session = replace(session, session == "Session 13", 13)) %>%
+  mutate(session = replace(session, session == "Session 14", 14)) %>%
+  mutate(session = replace(session, session == "Session 15", 15)) %>%
+  mutate(session = replace(session, session == "Session 16", 16))
+
+logCombinedCleaned$session = as.numeric(as.character(logCombinedCleaned$session))
+
+#remove outliers
+cleanedOutlier <-
+  logCombinedCleaned %>%
+  filter(AverageTime < 10)
+
+#check cleaned data
+cleanedOutlier %>%
+  ungroup() %>%
+  distinct(session) %>%
+  arrange()
+  
+```
+
+
+## Data visualization
+```{r}
+ggplot(data = cleanedOutlier, aes(x = session, y = AverageTime, group=player_id)) + 
+  ylim(0, 8) +
+  geom_line()  + 
+  aes(colour = Improved) + 
+  theme(legend.position = "right") + 
+  labs(title = "Session versus Average time spent by players")
+
+Improved.labs <- c("non-Improved", "Improved")
+names(Improved.labs) <- c("FALSE", "TRUE")
+
+ggplot(data = cleanedOutlier, aes(x = session, y = AverageTime, group=player_id)) + 
+  ylim(0, 8) +
+  geom_line()  + 
+  aes(colour = Improved) +
+  facet_wrap(~Improved, ncol = 4, labeller = labeller(Improved = Improved.labs), scales = "free")  +
+  theme(legend.position = "right") + 
+  labs(title = "Session versus Average time spent by players")
+
+ggplot(data = cleanedOutlier, aes(x = session, y = AverageTime)) + 
+  geom_point()  + 
+  aes(colour = Improved) +
+  facet_wrap(~Improved, ncol = 4, labeller = labeller(Improved = Improved.labs), scales = "free")  + 
+  stat_smooth(method = loess) + 
+  ylim(0, 8) +
+  labs(title = "Loess regression on Session versus Average time")
+```
+
+
+
+
+## Checking statistical significance
+```{r}
+#create a table to prepare for Chi Test
+quartile = c("Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q1","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q2","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q3","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4","Q4")
+
+chi_squared_chart <- logCombined %>%
+  group_by(player_id) %>%
+  mutate(Decision_Time = mean(AverageTime)) %>%
+  select(player_id,Improved,Decision_Time,avgDrugScore) %>%
+  distinct()%>%
+  arrange(desc(Decision_Time))
+
+chi_squared_chart['Quartile'] = quartile
+
+chi_squared_chart
+
+# Now we construct a table to be used in our Chi Squared Test
+table(chi_squared_chart$Quartile,chi_squared_chart$Improved)
+```
+
+```{r}
+#Now we can conduct the CHI Squared test
+chisq.test(chi_squared_chart$Quartile,chi_squared_chart$Improved, correct=FALSE)
+
+```
+
+
+```{r}
+#Scores for quartiles
+chi_squared_chart %>% 
+  group_by(Quartile)%>%
+  mutate(quantileAverageDrugScore = mean(avgDrugScore))%>%
+  select(quantileAverageDrugScore,Quartile)%>%
+  distinct()
+```
